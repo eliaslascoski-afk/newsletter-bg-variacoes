@@ -221,7 +221,10 @@ def enviar_email(html):
     msg["From"]    = EMAIL_REMETENTE
     msg["To"]      = EMAIL_DESTINATARIO
     msg.attach(MIMEText(html, "html", "utf-8"))
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
         server.login(EMAIL_REMETENTE, SENHA_APP)
         server.sendmail(EMAIL_REMETENTE, EMAIL_DESTINATARIO, msg.as_string())
     print(f"E-mail enviado para {EMAIL_DESTINATARIO}")
