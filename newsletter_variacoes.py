@@ -1,5 +1,6 @@
 import smtplib
 import datetime
+import time
 import json
 import urllib.request
 import urllib.parse
@@ -143,6 +144,7 @@ def coletar_resultados():
                 if e_relevante(post, jogo):
                     resultados.append({
                         "jogo": jogo,
+                                    time.sleep(2)  # Delay para respeitar rate limit do Reddit
                         "subreddit": sub,
                         "titulo": post["titulo"],
                         "url": post["url"],
