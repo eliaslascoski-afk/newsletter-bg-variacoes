@@ -140,11 +140,11 @@ def coletar_resultados():
         print(f"Buscando: {jogo}")
         for sub in SUBREDDITS:
             posts = buscar_rss(jogo, sub)
+            time.sleep(2)  # Delay para respeitar rate limit do Reddit
             for post in posts:
                 if e_relevante(post, jogo):
                     resultados.append({
                         "jogo": jogo,
-                                    time.sleep(2)  # Delay para respeitar rate limit do Reddit
                         "subreddit": sub,
                         "titulo": post["titulo"],
                         "url": post["url"],
