@@ -5,6 +5,8 @@ import json
 import urllib.request
 import urllib.parse
 import os
+import sys
+import traceback
 import xml.etree.ElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -15,7 +17,6 @@ from email.mime.text import MIMEText
 EMAIL_REMETENTE = os.environ["EMAIL_REMETENTE"]
 SENHA_APP = os.environ["SENHA_APP"]
 EMAIL_DESTINATARIO = os.environ["EMAIL_DESTINATARIO"]
-
 USER_AGENT = "newsletter_bg_variacoes/2.0 (RSS mode)"
 
 # Jogos base da colecao Ludopedia all_type
@@ -87,6 +88,7 @@ SUBREDDITS = [
     "boardgamevariants",
 ]
 
+
 def buscar_rss(jogo, subreddit):
     """Busca via RSS publico do Reddit - sem autenticacao necessaria."""
     query = urllib.parse.quote(f"{jogo} solo OR automa OR variant OR homebrew OR house+rule")
@@ -117,6 +119,7 @@ def buscar_rss(jogo, subreddit):
         print(f"  Erro RSS {jogo} / r/{subreddit}: {e}")
         return []
 
+
 def e_relevante(post, jogo):
     titulo = post["titulo"].lower()
     corpo = (post["corpo"] or "").lower()
@@ -128,11 +131,13 @@ def e_relevante(post, jogo):
     tem_jogo = any(p in texto for p in palavras_jogo)
     return tem_variacao and tem_jogo
 
+
 def formatar_data(iso):
     try:
         return datetime.datetime.strptime(iso, "%Y-%m-%d").strftime("%d/%m/%Y")
     except Exception:
         return iso
+
 
 def coletar_resultados():
     resultados = []
@@ -159,12 +164,12 @@ def coletar_resultados():
             unicos.append(r)
     return unicos
 
+
 def gerar_html(resultados):
     hoje = datetime.datetime.now().strftime("%d/%m/%Y")
     por_jogo = {}
     for r in resultados:
         por_jogo.setdefault(r["jogo"], []).append(r)
-
     if not resultados:
         blocos = "\n\n_Nenhuma novidade relevante encontrada hoje. Ate amanha!_\n\n"
     else:
@@ -172,14 +177,10 @@ def gerar_html(resultados):
         for jogo, posts in por_jogo.items():
             blocos += f"""\n\n### 🎲 {jogo}\n\n"""
             for p in posts:
-                blocos += f"""\n\n[{p["titulo"]}]({p["url"]})  \nr/{p["subreddit"]}  |  u/{p["autor"]}  |  📅 {p["criado"]}\n\n"""
-            blocos += "\n\n"
-
+                blocos += f"""\n\n[{p["titulo"]}]({p["url"]}) \nr/{p["subreddit"]} | u/{p["autor"]} | 📅 {p["criado"]}\n\n"""
+        blocos += "\n\n"
     total = len(resultados)
-    html = f"""
-<html>
-<head><meta charset='utf-8'><style>
-body{{font-family:Arial,sans-serif;max-width:680px;margin:auto;
+    html = f"""<html><head><meta charset='utf-8'><style>body{{font-family:Arial,sans-serif;max-width:680px;margin:auto;
 background:#fff;color:#333;padding:20px;}}
 h1{{background:#2c3e50;color:#fff;padding:16px 20px;
 border-radius:8px;font-size:20px;margin-bottom:6px;}}
@@ -187,22 +188,9 @@ border-radius:8px;font-size:20px;margin-bottom:6px;}}
 h2{{color:#2c3e50;border-bottom:2px solid #e67e22;
 padding-bottom:4px;font-size:16px;}}
 .rodape{{font-size:11px;color:#aaa;margin-top:30px;
-border-top:1px solid #eee;padding-top:10px;text-align:center;}}
-</style></head>
-<body>
-<h1>🎲 Variacoes Diarias — Colecao all_type</h1>
-<div class='sub'><strong>Edicao de {hoje}</strong>  |  {total} resultado(s)  |  r/boardgames • r/soloboardgaming • r/boardgamevariants</div>
-<h2>📬 Novidades do Reddit</h2>
-{blocos}
-<div class='rodape'>
-Gerado automaticamente via GitHub Actions • Todo dia as 08h (Brasilia)  <br/>
-Filtros: solo • automa • house rules • variants • homebrew  <br/>
-Repositorio: https://github.com/eliaslascoski-afk/newsletter-bg-variacoes
-</div>
-</body>
-</html>
-"""
+border-top:1px solid #eee;padding-top:10px;text-align:center;}}</style></head><body><h1>🎲 Variacoes Diarias — Colecao all_type</h1><div class='sub'><strong>Edicao de {hoje}</strong> | {total} resultado(s) | r/boardgames • r/soloboardgaming • r/boardgamevariants</div><h2>📬 Novidades do Reddit</h2>{blocos}<div class='rodape'>Gerado automaticamente via GitHub Actions • Todo dia as 08h (Brasilia) <br/><br>Filtros: solo • automa • house rules • variants • homebrew <br/><br>Repositorio: https://github.com/eliaslascoski-afk/newsletter-bg-variacoes</div></body></html>"""
     return html
+
 
 def enviar_email(html):
     hoje = datetime.datetime.now().strftime("%d/%m/%Y")
@@ -211,14 +199,33 @@ def enviar_email(html):
     msg["From"] = EMAIL_REMETENTE
     msg["To"] = EMAIL_DESTINATARIO
     msg.attach(MIMEText(html, "html", "utf-8"))
+    print(f"  Conectando ao SMTP: smtp.gmail.com:587")
+    print(f"  Remetente: {EMAIL_REMETENTE}")
+    print(f"  Destinatario: {EMAIL_DESTINATARIO}")
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            print("  Login SMTP...")
+            server.login(EMAIL_REMETENTE, SENHA_APP)
+            print("  Login OK. Enviando mensagem...")
+            server.sendmail(EMAIL_REMETENTE, EMAIL_DESTINATARIO, msg.as_string())
+            print(f"E-mail enviado com sucesso para {EMAIL_DESTINATARIO}")
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"ERRO DE AUTENTICACAO SMTP: {e}")
+        print("Verifique se a SENHA_APP e uma Senha de App do Google (16 caracteres) e nao a senha normal da conta.")
+        traceback.print_exc()
+        sys.exit(1)
+    except smtplib.SMTPException as e:
+        print(f"ERRO SMTP: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERRO INESPERADO ao enviar e-mail: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
-        server.login(EMAIL_REMETENTE, SENHA_APP)
-        server.sendmail(EMAIL_REMETENTE, EMAIL_DESTINATARIO, msg.as_string())
-    print(f"E-mail enviado para {EMAIL_DESTINATARIO}")
 
 def main():
     print("=== Newsletter BG Variacoes (RSS mode) ===")
@@ -230,6 +237,7 @@ def main():
     print("Enviando e-mail...")
     enviar_email(html)
     print("Concluido!")
+
 
 if __name__ == "__main__":
     main()
