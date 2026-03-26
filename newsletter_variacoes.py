@@ -1,4 +1,3 @@
-import smtplib
 import datetime
 import time
 import json
@@ -8,15 +7,13 @@ import os
 import sys
 import traceback
 import xml.etree.ElementTree as ET
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 # ============================================================
 # CONFIGURACOES (via GitHub Secrets)
 # ============================================================
-EMAIL_REMETENTE = os.environ["EMAIL_REMETENTE"]
-SENHA_APP = os.environ["SENHA_APP"]
-EMAIL_DESTINATARIO = os.environ["EMAIL_DESTINATARIO"]
+NTFY_TOPICO = os.environ["NTFY_TOPICO"]
+NTFY_URL = f"https://ntfy.sh/{NTFY_TOPICO}"
+
 USER_AGENT = "newsletter_bg_variacoes/2.0 (RSS mode)"
 
 # Jogos base da colecao Ludopedia all_type
@@ -124,9 +121,7 @@ def e_relevante(post, jogo):
     titulo = post["titulo"].lower()
     corpo = (post["corpo"] or "").lower()
     texto = titulo + " " + corpo
-    # Deve conter termo de variacao
     tem_variacao = any(t in texto for t in TERMOS_FILTRO)
-    # Deve mencionar ao menos parte do nome do jogo
     palavras_jogo = [p.lower() for p in jogo.split() if len(p) > 3]
     tem_jogo = any(p in texto for p in palavras_jogo)
     return tem_variacao and tem_jogo
@@ -145,7 +140,7 @@ def coletar_resultados():
         print(f"Buscando: {jogo}")
         for sub in SUBREDDITS:
             posts = buscar_rss(jogo, sub)
-            time.sleep(4)  # Delay para respeitar rate limit do Reddit
+            time.sleep(4)
             for post in posts:
                 if e_relevante(post, jogo):
                     resultados.append({
@@ -156,7 +151,6 @@ def coletar_resultados():
                         "autor": post["autor"],
                         "criado": formatar_data(post["criado"]),
                     })
-    # Remove duplicatas por URL
     vistos, unicos = set(), []
     for r in resultados:
         if r["url"] not in vistos:
@@ -165,77 +159,56 @@ def coletar_resultados():
     return unicos
 
 
-def gerar_html(resultados):
+def enviar_notificacao(resultados):
     hoje = datetime.datetime.now().strftime("%d/%m/%Y")
-    por_jogo = {}
-    for r in resultados:
-        por_jogo.setdefault(r["jogo"], []).append(r)
-    if not resultados:
-        blocos = "\n\n_Nenhuma novidade relevante encontrada hoje. Ate amanha!_\n\n"
-    else:
-        blocos = ""
-        for jogo, posts in por_jogo.items():
-            blocos += f"""\n\n### 🎲 {jogo}\n\n"""
-            for p in posts:
-                blocos += f"""\n\n[{p["titulo"]}]({p["url"]}) \nr/{p["subreddit"]} | u/{p["autor"]} | 📅 {p["criado"]}\n\n"""
-        blocos += "\n\n"
     total = len(resultados)
-    html = f"""<html><head><meta charset='utf-8'><style>body{{font-family:Arial,sans-serif;max-width:680px;margin:auto;
-background:#fff;color:#333;padding:20px;}}
-h1{{background:#2c3e50;color:#fff;padding:16px 20px;
-border-radius:8px;font-size:20px;margin-bottom:6px;}}
-.sub{{color:#666;font-size:13px;margin-bottom:24px;}}
-h2{{color:#2c3e50;border-bottom:2px solid #e67e22;
-padding-bottom:4px;font-size:16px;}}
-.rodape{{font-size:11px;color:#aaa;margin-top:30px;
-border-top:1px solid #eee;padding-top:10px;text-align:center;}}</style></head><body><h1>🎲 Variacoes Diarias — Colecao all_type</h1><div class='sub'><strong>Edicao de {hoje}</strong> | {total} resultado(s) | r/boardgames • r/soloboardgaming • r/boardgamevariants</div><h2>📬 Novidades do Reddit</h2>{blocos}<div class='rodape'>Gerado automaticamente via GitHub Actions • Todo dia as 08h (Brasilia) <br/><br>Filtros: solo • automa • house rules • variants • homebrew <br/><br>Repositorio: https://github.com/eliaslascoski-afk/newsletter-bg-variacoes</div></body></html>"""
-    return html
 
+    if total == 0:
+        corpo = "Nenhuma novidade relevante encontrada hoje. Ate amanha!"
+    else:
+        linhas = []
+        por_jogo = {}
+        for r in resultados:
+            por_jogo.setdefault(r["jogo"], []).append(r)
+        for jogo, posts in por_jogo.items():
+            linhas.append(f"\n** {jogo} **")
+            for p in posts:
+                linhas.append(f"- {p['titulo']}")
+                linhas.append(f"  {p['url']}")
+                linhas.append(f"  r/{p['subreddit']} | u/{p['autor']} | {p['criado']}")
+        corpo = "\n".join(linhas)
 
-def enviar_email(html):
-    hoje = datetime.datetime.now().strftime("%d/%m/%Y")
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[BG Newsletter] Variacoes & House Rules - {hoje}"
-    msg["From"] = EMAIL_REMETENTE
-    msg["To"] = EMAIL_DESTINATARIO
-    msg.attach(MIMEText(html, "html", "utf-8"))
-    print(f"  Conectando ao SMTP: smtp.gmail.com:587")
-    print(f"  Remetente: {EMAIL_REMETENTE}")
-    print(f"  Destinatario: {EMAIL_DESTINATARIO}")
+    titulo_notif = f"[BG] {total} novidade(s) hoje - {hoje}"
+
+    print(f"Enviando notificacao para ntfy.sh/{NTFY_TOPICO}...")
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            print("  Login SMTP...")
-            server.login(EMAIL_REMETENTE, SENHA_APP)
-            print("  Login OK. Enviando mensagem...")
-            server.sendmail(EMAIL_REMETENTE, EMAIL_DESTINATARIO, msg.as_string())
-            print(f"E-mail enviado com sucesso para {EMAIL_DESTINATARIO}")
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"ERRO DE AUTENTICACAO SMTP: {e}")
-        print("Verifique se a SENHA_APP e uma Senha de App do Google (16 caracteres) e nao a senha normal da conta.")
-        traceback.print_exc()
-        sys.exit(1)
-    except smtplib.SMTPException as e:
-        print(f"ERRO SMTP: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+        dados = corpo.encode("utf-8")
+        req = urllib.request.Request(
+            NTFY_URL,
+            data=dados,
+            method="POST",
+            headers={
+                "Title": titulo_notif,
+                "Priority": "default",
+                "Tags": "game_die",
+                "Content-Type": "text/plain; charset=utf-8",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"Notificacao enviada! Status: {resp.status}")
     except Exception as e:
-        print(f"ERRO INESPERADO ao enviar e-mail: {e}")
+        print(f"ERRO ao enviar notificacao: {e}")
         traceback.print_exc()
         sys.exit(1)
 
 
 def main():
-    print("=== Newsletter BG Variacoes (RSS mode) ===")
+    print("=== Newsletter BG Variacoes (ntfy.sh mode) ===")
     print(f"Data: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print("Coletando posts via RSS publico do Reddit...")
     resultados = coletar_resultados()
     print(f"Total de posts relevantes: {len(resultados)}")
-    html = gerar_html(resultados)
-    print("Enviando e-mail...")
-    enviar_email(html)
+    enviar_notificacao(resultados)
     print("Concluido!")
 
 
