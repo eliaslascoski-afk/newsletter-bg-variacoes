@@ -10,7 +10,7 @@ on:
 jobs:
   enviar-newsletter:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout do repositorio
         uses: actions/checkout@v4
@@ -21,4 +21,5 @@ jobs:
       - name: Executar script da newsletter
         env:
           NTFY_TOPICO: ${{ secrets.NTFY_TOPICO }}
+          LUDOPEDIA_TOKEN: ${{ secrets.LUDOPEDIA_TOKEN }}
         run: python newsletter_variacoes.py
