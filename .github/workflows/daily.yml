@@ -11,21 +11,14 @@ jobs:
   enviar-newsletter:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - name: Checkout do repositorio
         uses: actions/checkout@v4
-
       - name: Configurar Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Executar script da newsletter
         env:
-          EMAIL_REMETENTE:    ${{ secrets.EMAIL_REMETENTE }}
-          SENHA_APP:          ${{ secrets.SENHA_APP }}
-          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
-          REDDIT_CLIENT_ID:   ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          NTFY_TOPICO: ${{ secrets.NTFY_TOPICO }}
         run: python newsletter_variacoes.py
